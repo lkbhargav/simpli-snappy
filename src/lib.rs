@@ -72,13 +72,9 @@ impl Snappier {
 
     let mut output = vec![0; compress_bytes_len];
 
-    self.encoder.compress(&inp_as_bytes, &mut output)?;
+    let to_retain = self.encoder.compress(&inp_as_bytes, &mut output)?;
 
-    let res = Snappier::get_index_of_zero_starting_index(&output);
-
-    if res.1 {
-      output = (&output[..res.0]).to_vec();
-    }
+    output = (&output[..to_retain]).to_vec();
 
     Ok(output)
   }
@@ -132,79 +128,6 @@ impl Snappier {
     }
     compressed = format!("[{}]{}", key_array.join(","), compressed);
     compressed
-  }
-
-  fn get_index_of_zero_starting_index(inp: &Vec<u8>) -> (usize, bool) {
-    if inp[inp.len()-1] > 0 {
-      return (0, false);
-    }
-
-    let mut min = 0;
-    let mut max = inp.len();
-    let mut current_search_index: usize = (max + min) / 2;
-
-    let mut key_index_found = 0;
-
-    loop {
-      if inp[current_search_index] == 0
-      // searching to the left to see if it is zero or not
-        && ((current_search_index > 0 && inp[current_search_index - 1] > 0)
-          || current_search_index == 0)
-      {
-        let mut tmp_index = current_search_index;
-        let mut false_positive: bool = false;
-
-        // searching for the next 5 bytes also to be zero
-        if tmp_index < inp.len()-1 && inp[tmp_index+1] == 0 {
-          while tmp_index+1 < inp.len()-1 {
-            if inp[tmp_index+2] > 0 {
-              false_positive = true;
-              break;
-            }
-            tmp_index+=1;
-          }
-        }
-
-        if tmp_index < inp.len()-1 && inp[tmp_index+1] > 0 {
-          min = tmp_index+1;
-          false_positive = true;
-        }
-
-        if !false_positive {
-          key_index_found = current_search_index;
-          break;
-        }
-      }
-
-      if inp[current_search_index] > 0 {
-        min = current_search_index;
-      }
-
-      // zero can come in at 2 conditions => 1. In between the valid bytes; 2. Once the valid bytes end | logic here will make sure to avoid false positivies when we are dealing with first condition
-      if inp[current_search_index] == 0 {
-        let mut tmp_index = current_search_index;
-        let mut counter = 0;
-
-        while tmp_index+1 < inp.len()-1 {
-          counter+=1;
-
-          if inp[tmp_index+1] > 0 {
-            min = tmp_index+1;
-            break;
-          }
-          tmp_index+=1;
-
-          if counter == 10 {
-            max = current_search_index;
-            break;
-          }
-        }
-      }
-
-      current_search_index = (max+min)/2;
-    }
-
-    (key_index_found, true)
   }
 }
 
@@ -418,79 +341,32 @@ mod tests {
   }
 
   #[test]
-  fn test_get_index_of_zero_starting_index_basic() {
-    let (val, found) = Snappier::get_index_of_zero_starting_index(&vec![1,2,3,4,5,6,0,0,0,0,0,0,0]);
-    assert_eq!(val, 6);
-    assert!(found);
+  fn test_complex_encoding() -> Result<(), Box<dyn Error>> {
+      let inp = "The Rust Reference defines a raw string literal as starting with the character U+0072 (r), followed by zero or more of the character U+0023 (#) and a U+0022 (double-quote) character. The raw string body can contain any sequence of Unicode characters and is terminated only by another U+0022 (double-quote) character, followed by the same number of U+0023 (#) characters that preceded the opening U+0022 (double-quote) character.";
+
+      let to_decode = vec![172, 3, 240, 121, 84, 104, 101, 32, 82, 117, 115, 116, 32, 82, 101, 102, 101, 114, 101, 110, 99, 101, 32, 100, 101, 102, 105, 110, 101, 115, 32, 97, 32, 114, 97, 119, 32, 115, 116, 114, 105, 110, 103, 32, 108, 105, 116, 101, 114, 97, 108, 32, 97, 115, 32, 115, 116, 97, 114, 116, 105, 110, 103, 32, 119, 105, 116, 104, 32, 116, 104, 101, 32, 99, 104, 97, 114, 97, 99, 116, 101, 114, 32, 85, 43, 48, 48, 55, 50, 32, 40, 114, 41, 44, 32, 102, 111, 108, 108, 111, 119, 101, 100, 32, 98, 121, 32, 122, 101, 114, 111, 32, 111, 114, 32, 109, 111, 114, 101, 32, 111, 102, 32, 116, 104, 101, 58, 54, 0, 144, 50, 51, 32, 40, 35, 41, 32, 97, 110, 100, 32, 97, 32, 85, 43, 48, 48, 50, 50, 32, 40, 100, 111, 117, 98, 108, 101, 45, 113, 117, 111, 116, 101, 41, 32, 99, 104, 13, 103, 4, 46, 32, 1, 183, 29, 158, 96, 98, 111, 100, 121, 32, 99, 97, 110, 32, 99, 111, 110, 116, 97, 105, 110, 32, 97, 110, 121, 32, 115, 101, 113, 117, 5, 209, 36, 111, 102, 32, 85, 110, 105, 99, 111, 100, 101, 25, 116, 0, 115, 5, 106, 112, 105, 115, 32, 116, 101, 114, 109, 105, 110, 97, 116, 101, 100, 32, 111, 110, 108, 121, 32, 98, 121, 32, 97, 110, 111, 116, 104, 101, 114, 126, 134, 0, 54, 226, 0, 33, 8, 40, 115, 97, 109, 101, 32, 110, 117, 109, 98, 101, 114, 5, 117, 4, 43, 48, 17, 215, 21, 187, 56, 115, 32, 116, 104, 97, 116, 32, 112, 114, 101, 99, 101, 100, 101, 100, 5, 55, 24, 111, 112, 101, 110, 105, 110, 103, 126, 112, 0, 0, 46];
+
+      let mut snappier = Snappier::new(false);
+
+      let decoded = snappier.decode(to_decode)?;
+
+      assert_eq!(decoded, inp);
+
+      Ok(())
   }
 
   #[test]
-  fn test_get_index_of_zero_starting_index_1() {
-    let val = Snappier::get_index_of_zero_starting_index(&vec![1,2,3,4,5,6,0,0,0]);
-    assert_eq!(val.0, 6);
-    assert!(val.1);
-  }
+  fn test_complete_flow() -> Result<(), Box<dyn Error>> {
+    let inp = "The Rust Reference defines a raw string literal as starting with the character U+0072 (r), followed by zero or more of the character U+0023 (#) and a U+0022 (double-quote) character. The raw string body can contain any sequence of Unicode characters and is terminated only by another U+0022 (double-quote) character, followed by the same number of U+0023 (#) characters that preceded the opening U+0022 (double-quote) character.";
 
-  #[test]
-  fn test_get_index_of_zero_starting_index_2() {
-    let val = Snappier::get_index_of_zero_starting_index(&vec![1,2,3,4,5,6,0]);
-    assert_eq!(val.0, 6);
-    assert!(val.1);
-  }
+    let mut snappier = Snappier::new(false);
 
-  #[test]
-  fn test_get_index_of_zero_starting_index_3() {
-    let val = Snappier::get_index_of_zero_starting_index(&vec![1,2,3,4,5,6]);
-    assert_eq!(val.0, 0);
-    assert!(!val.1);
-  }
+    let s = snappier
+        .encode(inp, vec![])?;
 
-  #[test]
-  fn test_get_index_of_zero_starting_index_4() {
-    let val = Snappier::get_index_of_zero_starting_index(&vec![1,2,3,0,5,6,7]);
-    assert_eq!(val.0, 0);
-    assert!(!val.1);
-  }
+    let s = snappier.decode(s)?;
 
-  #[test]
-  fn test_get_index_of_zero_starting_index_5() {
-    let val = Snappier::get_index_of_zero_starting_index(&vec![1,2,3,0,5,6,7,0]);
-    assert_eq!(val.0, 7);
-    assert!(val.1);
-  }
-
-  #[test]
-  fn test_get_index_of_zero_starting_index_6() {
-    let val = Snappier::get_index_of_zero_starting_index(&vec![1,2,3,0,0,5,6,7,0]);
-    assert_eq!(val.0, 8);
-    assert!(val.1);
-  }
-
-  #[test]
-  fn test_get_index_of_zero_starting_index_7() {
-    let val = Snappier::get_index_of_zero_starting_index(&vec![1,2,3,0,0,0,0,0,0,0,5,6,7,0]);
-    assert_eq!(val.0, 13);
-    assert!(val.1);
-  }
-
-  #[test]
-  fn test_get_index_of_zero_starting_index_8() {
-    let val = Snappier::get_index_of_zero_starting_index(&vec![1,2,3,0,0,0,0,0,0,0,0,0,0,0,0,5,6,7,0]);
-    assert_eq!(val.0, 18);
-    assert!(val.1);
-  }
-
-  #[test]
-  fn test_get_index_of_zero_starting_index_9() {
-    let val = Snappier::get_index_of_zero_starting_index(&vec![139, 11, 216, 103, 82, 80, 67, 32, 97, 110, 100, 32, 80, 114, 111, 116, 111, 98, 117, 102, 32, 112, 114, 111, 118, 105, 100, 101, 32, 97, 110, 32, 101, 97, 115, 121, 32, 119, 97, 121, 32, 116, 111, 32, 112, 114, 101, 99, 105, 115, 101, 108, 121, 32, 10, 32, 32, 32, 194, 2, 0, 56, 100, 101, 102, 105, 110, 101, 32, 97, 32, 115, 101, 114, 118, 105, 99, 1, 95, 124, 100, 32, 97, 117, 116, 111, 32, 103, 101, 110, 101, 114, 97, 116, 101, 32, 114, 101, 108, 105, 97, 98, 108, 101, 32, 99, 108, 105, 101, 110, 116, 32, 210, 104, 0, 104, 108, 105, 98, 114, 97, 114, 105, 101, 115, 32, 102, 111, 114, 32, 105, 79, 83, 44, 32, 65, 110, 100, 114, 111, 105, 100, 32, 1, 230, 8, 116, 104, 101, 5, 130, 8, 101, 114, 115, 13, 233, 8, 105, 110, 103, 214, 106, 0, 1, 75, 44, 98, 97, 99, 107, 32, 101, 110, 100, 46, 32, 84, 104, 17, 184, 88, 115, 32, 99, 97, 110, 32, 116, 97, 107, 101, 32, 97, 100, 118, 97, 110, 116, 97, 103, 101, 32, 111, 102, 9, 13, 8, 99, 101, 100, 214, 110, 0, 20, 115, 116, 114, 101, 97, 109, 1, 173, 1, 199, 184, 99, 111, 110, 110, 101, 99, 116, 105, 111, 110, 32, 102, 101, 97, 116, 117, 114, 101, 115, 32, 119, 104, 105, 99, 104, 32, 104, 101, 108, 112, 32, 115, 97, 118, 101, 32, 98, 97, 110, 100, 119, 105, 100, 116, 104, 44, 32, 210, 74, 1, 84, 100, 111, 32, 109, 111, 114, 101, 32, 111, 118, 101, 114, 32, 102, 101, 119, 101, 114, 32, 84, 67, 80, 29, 123, 0, 115, 5, 139, 5, 108, 20, 67, 80, 85, 32, 117, 115, 1, 233, 1, 158, 48, 98, 97, 116, 116, 101, 114, 121, 32, 108, 105, 102, 101, 46, 210, 124, 0, 69, 150, 12, 108, 97, 114, 103, 65, 112, 84, 102, 111, 108, 108, 111, 119, 115, 32, 72, 84, 84, 80, 32, 115, 101, 109, 97, 110, 116, 105, 99, 115, 9, 152, 1, 20, 72, 47, 50, 32, 98, 117, 116, 32, 119, 101, 32, 101, 120, 112, 108, 105, 99, 105, 116, 108, 218, 165, 2, 0, 97, 1, 105, 69, 57, 40, 102, 117, 108, 108, 45, 100, 117, 112, 108, 101, 120, 57, 123, 120, 46, 32, 87, 101, 32, 100, 105, 118, 101, 114, 103, 101, 32, 102, 114, 111, 109, 32, 116, 121, 112, 105, 99, 97, 108, 32, 82, 69, 83, 84, 32, 210, 234, 0, 20, 99, 111, 110, 118, 101, 110, 33, 202, 12, 115, 32, 97, 115, 1, 197, 56, 117, 115, 101, 32, 115, 116, 97, 116, 105, 99, 32, 112, 97, 116, 104, 73, 201, 92, 112, 101, 114, 102, 111, 114, 109, 97, 110, 99, 101, 32, 114, 101, 97, 115, 111, 110, 115, 32, 100, 117, 114, 105, 222, 189, 2, 48, 99, 97, 108, 108, 32, 100, 105, 115, 112, 97, 116, 99, 104, 1, 121, 12, 112, 97, 114, 115, 1, 78, 5, 25, 24, 112, 97, 114, 97, 109, 101, 116, 97, 37, 5, 231, 5, 136, 12, 44, 32, 113, 117, 33, 214, 29, 29, 210, 242, 0, 65, 34, 96, 112, 97, 121, 108, 111, 97, 100, 32, 98, 111, 100, 121, 32, 97, 100, 100, 115, 32, 108, 97, 116, 101, 110, 99, 121, 5, 30, 8, 99, 111, 109, 33, 121, 8, 105, 116, 121, 37, 114, 0, 104, 65, 206, 12, 97, 108, 115, 111, 33, 154, 16, 109, 97, 108, 105, 122, 222, 69, 3, 129, 126, 56, 116, 32, 111, 102, 32, 101, 114, 114, 111, 114, 115, 32, 116, 104, 97, 69, 56, 40, 98, 101, 108, 105, 101, 118, 101, 32, 97, 114, 101, 73, 244, 16, 100, 105, 114, 101, 99, 65, 71, 20, 97, 112, 112, 108, 105, 99, 133, 150, 20, 116, 111, 32, 65, 80, 73, 214, 244, 0, 33, 212, 12, 99, 97, 115, 101, 5, 115, 0, 110, 133, 59, 65, 186, 52, 32, 115, 116, 97, 116, 117, 115, 32, 99, 111, 100, 101, 115, 46, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
-    assert_eq!(val.0, 715);
-    assert!(val.1);
-  }
-
-  #[test]
-  fn test_get_index_of_zero_starting_index_10() {
-    let val = Snappier::get_index_of_zero_starting_index(&vec![126, 84, 91, 123, 34, 110, 97, 109, 101, 34, 58, 32, 34, 66, 104, 97, 114, 103, 97, 118, 34, 125, 44, 32, 254, 21, 0, 154, 21, 0, 0, 93, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
-    assert_eq!(val.0, 32);
-    assert!(val.1);
+    assert_eq!(s, inp);
+    Ok(())
   }
 }
